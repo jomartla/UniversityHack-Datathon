@@ -1,11 +1,25 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
 
 # Extracts rgbnir channels from DataFrame
-def extract_channels(df):
+def extract_channels(df, drop_tails = False, return_class_for_each = False, return_class_df = True):
     channels = ["Q_R","Q_G","Q_B","Q_NIR"]
     channel_dfs = []
     for c in channels:
         col_filter = df.columns.str.contains(c)
+        if drop_tails:
+            col_filter = col_filter * np.invert(df.columns.str.endswith("_0"))
+        if return_class_for_each:
+            index = list(balanced_data_std.columns).index("CLASE")
+            col_filter[index] = True
         channel_dfs.append(df[df.columns[col_filter]])
+    if return_class_df:
+        channel_dfs.append(df["CLASE"])
     return channel_dfs
 
 
@@ -92,3 +106,19 @@ def plot_corr(data, title = None):
         rotation=45,
         horizontalalignment='right'
     );
+
+
+
+# Coordinate change operations
+def cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return(rho, phi)
+
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
+def normalizer(df):
+    return (df - df.mean())/df.std()
