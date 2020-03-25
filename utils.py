@@ -35,7 +35,7 @@ def process_data(data):
     # replace values in CADASTRALQUALITYID
     replacement  = {"A": 12, "B" : 11, "C" : 10, "1": 9, "2" : 8, "3" : 7, "4" : 6, "5" : 5,"6" : 4,"7" : 3,"8" : 2,"9" : 1}
     data = data.replace(replacement)
-    #Scale by column
+    #Scale by coordinates
     data = standard_scale_several_columns(data, ["X","Y"])
     #Scale by rgbnir
     data = standard_scale_several_columns(data, data.columns[data.columns.str.contains("Q_")])
@@ -64,7 +64,7 @@ def plot_all_channels(data):
     fig.suptitle("Mean of channels ")
     for i in range(size):
         terrain = terrain_types[i]
-        r, g, b, nir = extract_channels(data)
+        r, g, b, nir = extract_channels(data, False, False, False)
         ax[i][0].set_title("R channel-" + terrain)
         ax[i][1].set_title("G channel-" + terrain)
         ax[i][2].set_title("B channel-" + terrain)
@@ -91,7 +91,7 @@ def plot_channels(terrain, data):
 
 # Plots the correlation matrix of the given dataframe
 def plot_corr(data, title = None):
-    fig, ax = plt.subplots(figsize=(20,20))
+    fig, ax = plt.subplots(figsize=(14,14))
     corr = data.corr()
     ax = sns.heatmap(
         corr, 
