@@ -22,6 +22,14 @@ def extract_channels(df, drop_tails = False, return_class_for_each = False, retu
         channel_dfs.append(df["CLASE"])
     return channel_dfs
 
+# merges rgbnir dataframes and prepares them for the neural net
+def merge_for_Cnn1(df_r, df_g, df_b, df_nir ):
+    merge = []
+    for a,b,c,d in zip(df_r.values,df_g.values,df_b.values,df_nir.values):
+        row = np.vstack((a,b,c,d)).T
+        merge.append(row)
+    merge = np.array(merge)
+    return merge
 
 # Standarize some columns of a dataframe taking all the values within the columns together 
 def standard_scale_several_columns(data, columns):
@@ -29,6 +37,20 @@ def standard_scale_several_columns(data, columns):
     df = (df - df.mean())/df.std()
     data[columns] = df
     return data
+
+# Prepares the dataset to be piped in the network
+def prepare_data_for_network(data, 
+                             columns_dense = ['X', 'Y','AREA', 'GEOM_R1', 'GEOM_R2', 'GEOM_R3',
+           'GEOM_R4', 'CONTRUCTIONYEAR'],
+                            columns_cnn = ['AGRICULTURE', 'INDUSTRIAL', 'OFFICE', 'OTHER', 'PUBLIC',
+           'RESIDENTIAL', 'RETAIL']):
+    balanced_data_std = process_data(data)
+    data_dense = balanced_data_std[columns_dense]
+    labels = balanced_data_std[columns_cnn]
+
+    df_r, df_g, df_b, df_nir = extract_channels(balanced_data_std, True, False, False)
+    data_rgbnir = merge_for_Cnn1(df_r, df_g, df_b, df_nir)
+    return data_dense, data_rgbnir, labels
 
 #Standarizes dataset by sets of columns
 def process_data(data):
@@ -45,14 +67,18 @@ def process_data(data):
     for col in ["AREA", "CADASTRALQUALITYID", "MAXBUILDINGFLOOR", "CONTRUCTIONYEAR"]:
         data = standard_scale_several_columns(data,[col])
 
-    #One hot encode CLASE
-    enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
-    df_cls = data.CLASE.values.reshape(-1, 1)
-    df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
-    df_cls_encoded.index = data.index
+    # If dataframe has labels, it onehotencodes them
+    if "CLASE" in data.columns:
+        #One hot encode CLASE
+        enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
+        df_cls = data.CLASE.values.reshape(-1, 1)
+        df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
+        df_cls_encoded.index = data.index
+        #Append and concatenate
+        data_processed = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
+    else:
+        data_processed = data
 
-    #Append and concatenate
-    data_processed = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
     return data_processed
 
 
