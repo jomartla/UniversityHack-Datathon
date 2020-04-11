@@ -3,7 +3,32 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+from sklearn import metrics
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+
+# Coordinate change operations
+def cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return(rho, phi)
+
+
+# Given predictions and test labels, create the confusion matrix
+def confusion_matrix_dataframe(predictions, test_labels):
+    predictions = np.nan_to_num(predictions)
+    matrix = metrics.confusion_matrix(np.argmax(test_labels.to_numpy(), axis = 1), 
+                                  np.argmax(predictions, axis = 1))
+    matrix_df = pd.DataFrame(matrix)
+    matrix_df.columns = ['AGRICULTURE', 'INDUSTRIAL', 'OFFICE', 'OTHER', 'PUBLIC','RESIDENTIAL', 'RETAIL']
+    matrix_df.rename(index={0 : 'AGRICULTURE',
+                        1 : 'INDUSTRIAL',
+                        2 : 'OFFICE',
+                        3 : 'OTHER',
+                        4 : 'PUBLIC',
+                        5 : 'RESIDENTIAL',
+                        6 : 'RETAIL'}, inplace=True)
+    return matrix_df
 
 
 # Extracts rgbnir channels from DataFrame
@@ -15,14 +40,14 @@ def extract_channels(df, drop_tails = False, return_class_for_each = False, retu
         if drop_tails:
             col_filter = col_filter * np.invert(df.columns.str.endswith("_0"))
         if return_class_for_each:
-            index = list(balanced_data_std.columns).index("CLASE")
+            index = list(df.columns).index("CLASE")
             col_filter[index] = True
         channel_dfs.append(df[df.columns[col_filter]])
     if return_class_df:
         channel_dfs.append(df["CLASE"])
     return channel_dfs
-
-# merges rgbnir dataframes and prepares them for the neural net
+    
+# Merge for cnn1
 def merge_for_Cnn1(df_r, df_g, df_b, df_nir ):
     merge = []
     for a,b,c,d in zip(df_r.values,df_g.values,df_b.values,df_nir.values):
@@ -31,29 +56,17 @@ def merge_for_Cnn1(df_r, df_g, df_b, df_nir ):
     merge = np.array(merge)
     return merge
 
-# Standarize some columns of a dataframe taking all the values within the columns together 
-def standard_scale_several_columns(data, columns):
-    df = data[columns]
-    df = (df - df.mean())/df.std()
-    data[columns] = df
-    return data
 
-# Prepares the dataset to be piped in the network
-def prepare_data_for_network(data, 
-                             columns_dense = ['X', 'Y','AREA', 'GEOM_R1', 'GEOM_R2', 'GEOM_R3',
-           'GEOM_R4', 'CONTRUCTIONYEAR'],
-                            columns_cnn = ['AGRICULTURE', 'INDUSTRIAL', 'OFFICE', 'OTHER', 'PUBLIC',
-           'RESIDENTIAL', 'RETAIL']):
-    balanced_data_std = process_data(data)
-    data_dense = balanced_data_std[columns_dense]
-    labels = balanced_data_std[columns_cnn]
+# Normalize
+def normalizer(df):
+    return (df - df.mean())/df.std()
 
-    df_r, df_g, df_b, df_nir = extract_channels(balanced_data_std, True, False, False)
-    data_rgbnir = merge_for_Cnn1(df_r, df_g, df_b, df_nir)
-    return data_dense, data_rgbnir, labels
 
 #Standarizes dataset by sets of columns
 def process_data(data):
+    
+    # Remove the nulls
+    data = data.dropna()
     # replace values in CADASTRALQUALITYID
     replacement  = {"A": 12, "B" : 11, "C" : 10, "1": 9, "2" : 8, "3" : 7, "4" : 6, "5" : 5,"6" : 4,"7" : 3,"8" : 2,"9" : 1}
     data = data.replace(replacement)
@@ -67,19 +80,32 @@ def process_data(data):
     for col in ["AREA", "CADASTRALQUALITYID", "MAXBUILDINGFLOOR", "CONTRUCTIONYEAR"]:
         data = standard_scale_several_columns(data,[col])
 
-    # If dataframe has labels, it onehotencodes them
-    if "CLASE" in data.columns:
-        #One hot encode CLASE
-        enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
-        df_cls = data.CLASE.values.reshape(-1, 1)
-        df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
-        df_cls_encoded.index = data.index
-        #Append and concatenate
-        data_processed = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
-    else:
-        data_processed = data
+    #One hot encode CLASE
+    enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
+    df_cls = data.CLASE.values.reshape(-1, 1)
+    df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
+    df_cls_encoded.index = data.index
 
+    #Append and concatenate
+    data_processed = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
     return data_processed
+
+
+# Prepare data for network
+def prepare_data_for_network(data, 
+                             columns_dense = ['X', 'Y','AREA', 'GEOM_R1', 'GEOM_R2', 'GEOM_R3', 'GEOM_R4', 
+                                              'CONTRUCTIONYEAR', 'MAXBUILDINGFLOOR', 'CADASTRALQUALITYID'],
+                             columns_cnn = ['AGRICULTURE', 'INDUSTRIAL', 'OFFICE', 'OTHER', 'PUBLIC','RESIDENTIAL', 'RETAIL'],
+                             process_data_bool = False):
+    if process_data_bool:
+        data = process_data(data)
+
+    data_dense = data[columns_dense]
+    labels = data[columns_cnn]
+
+    df_r, df_g, df_b, df_nir = extract_channels(data, True, False, False)
+    data_rgbnir = merge_for_Cnn1(df_r, df_g, df_b, df_nir)
+    return data_dense, data_rgbnir, labels
 
 
 # Plots the means of the rgbnir channels of the data by terrain type
@@ -100,6 +126,7 @@ def plot_all_channels(data):
         ax[i][2].plot(b.filter(like = terrain, axis = 0).iloc[0], color = "blue")
         ax[i][3].plot(nir.filter(like = terrain, axis = 0).iloc[0], color = "brown")
 
+        
 # Plots the means of the rgbnir channels of the data given a specific terrain type
 def plot_channels(terrain, data):
     r, g, b, nir = extract_channels(data)
@@ -133,18 +160,17 @@ def plot_corr(data, title = None):
         horizontalalignment='right'
     );
 
-
-
-# Coordinate change operations
-def cart2pol(x, y):
-    rho = np.sqrt(x**2 + y**2)
-    phi = np.arctan2(y, x)
-    return(rho, phi)
-
+    
+# Pol to cart
 def pol2cart(rho, phi):
     x = rho * np.cos(phi)
     y = rho * np.sin(phi)
     return(x, y)
-
-def normalizer(df):
-    return (df - df.mean())/df.std()
+    
+    
+# Standarize some columns of a dataframe taking all the values within the columns together 
+def standard_scale_several_columns(data, columns):
+    df = data[columns]
+    df = (df - df.mean())/df.std()
+    data[columns] = df
+    return data
