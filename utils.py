@@ -63,10 +63,12 @@ def normalizer(df):
 
 
 #Standarizes dataset by sets of columns
-def process_data(data):
+def process_data(data, is_final_test = False):
     
     # Remove the nulls
-    data = data.dropna()
+    if not is_final_test:
+        data = data.dropna()
+    
     # replace values in CADASTRALQUALITYID
     replacement  = {"A": 12, "B" : 11, "C" : 10, "1": 9, "2" : 8, "3" : 7, "4" : 6, "5" : 5,"6" : 4,"7" : 3,"8" : 2,"9" : 1}
     data = data.replace(replacement)
@@ -79,16 +81,18 @@ def process_data(data):
     
     for col in ["AREA", "CADASTRALQUALITYID", "MAXBUILDINGFLOOR", "CONTRUCTIONYEAR"]:
         data = standard_scale_several_columns(data,[col])
+    
+    if not is_final_test:
+        #One hot encode CLASE
+        enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
+        df_cls = data.CLASE.values.reshape(-1, 1)
+        df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
+        df_cls_encoded.index = data.index
 
-    #One hot encode CLASE
-    enc = OneHotEncoder(handle_unknown='ignore', sparse = False)
-    df_cls = data.CLASE.values.reshape(-1, 1)
-    df_cls_encoded = pd.DataFrame(enc.fit_transform(df_cls), columns = enc.categories_[0])
-    df_cls_encoded.index = data.index
-
-    #Append and concatenate
-    data_processed = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
-    return data_processed
+        #Append and concatenate
+        data = pd.merge(data, df_cls_encoded, left_index=True, right_index=True)
+    
+    return data
 
 
 # Prepare data for network
@@ -96,16 +100,23 @@ def prepare_data_for_network(data,
                              columns_dense = ['X', 'Y','AREA', 'GEOM_R1', 'GEOM_R2', 'GEOM_R3', 'GEOM_R4', 
                                               'CONTRUCTIONYEAR', 'MAXBUILDINGFLOOR', 'CADASTRALQUALITYID'],
                              columns_cnn = ['AGRICULTURE', 'INDUSTRIAL', 'OFFICE', 'OTHER', 'PUBLIC','RESIDENTIAL', 'RETAIL'],
-                             process_data_bool = False):
-    if process_data_bool:
-        data = process_data(data)
+                             process_data_bool = False,
+                             is_final_test = False):
+    if process_data_bool or is_final_test:
+            data = process_data(data, is_final_test)
 
     data_dense = data[columns_dense]
-    labels = data[columns_cnn]
-
-    df_r, df_g, df_b, df_nir = extract_channels(data, True, False, False)
+    
+    if not is_final_test:
+        labels = data[columns_cnn]
+    
+    df_r, df_g, df_b, df_nir = extract_channels(data, False, False, False)
     data_rgbnir = merge_for_Cnn1(df_r, df_g, df_b, df_nir)
-    return data_dense, data_rgbnir, labels
+    
+    if not is_final_test:
+        return data_dense, data_rgbnir, labels
+    else:
+        return data_dense, data_rgbnir
 
 
 # Plots the means of the rgbnir channels of the data by terrain type
